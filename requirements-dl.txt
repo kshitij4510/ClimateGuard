@@ -1,0 +1,16 @@
+# Deep-learning comparison module — install AFTER requirements.txt.
+# Usage:  pip install -r requirements.txt && pip install -r requirements-dl.txt
+#
+# PyTorch CPU build (CPU is suitable for these compact GRU/LSTM runs).
+# Keep PyPI as the primary index so Captum and Matplotlib resolve reliably;
+# use the PyTorch CPU wheel index only for the CPU torch wheel.
+# To use CUDA, install the matching official PyTorch wheel separately after
+# checking the local CUDA driver compatibility.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+
+# Interpretability
+captum==0.9.0
+
+# Plotting — Agg backend, no display needed
+matplotlib==3.11.1

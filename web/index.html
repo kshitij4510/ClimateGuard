@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ClimateGuard — Heatwave risk forecasts for five Indian cities. 1-day-ahead predictions using 35 years of ERA5 climate data.">
+  <meta name="theme-color" content="#c8421b">
+  <meta property="og:title" content="ClimateGuard — Heatwave Risk Dashboard">
+  <meta property="og:description" content="Research-model heatwave risk forecasts for Indian cities.">
+  <link rel="manifest" href="/web/manifest.webmanifest">
+  <title>ClimateGuard — Heatwave Risk Dashboard</title>
+  <link rel="stylesheet" href="/web/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C8421B' stroke-width='2'><path d='M12 2a7 7 0 0 1 7 7c0 3.5-2.5 6.5-5.5 8.5a3 3 0 0 1-3 0C7.5 15.5 5 12.5 5 9a7 7 0 0 1 7-7z'/><circle cx='12' cy='9' r='2.5'/></svg>">
+  <script src="/web/layout.js"></script>
+</head>
+<body>
+
+  <main id="main-content">
+  <div class="container page-body">
+
+    <!-- ============================================================
+         MASTHEAD
+         ============================================================ -->
+    <header class="masthead">
+      <h1 class="masthead__title" id="masthead-title">Heatwave risk forecasts<br>for five Indian cities</h1>
+      <p class="masthead__desc" id="masthead-desc">Select a city and date to get a 1-day-ahead heatwave prediction from the model.</p>
+      <p class="masthead__meta" id="masthead-meta">Random Forest &middot; 110 features &middot; decision threshold 0.70 &middot; test period 2023&ndash;2025</p>
+    </header>
+
+    <!-- ============================================================
+         REGION SWITCH (India | Europe)
+         ============================================================ -->
+    <div class="region-switch" id="region-switch" role="group" aria-label="Region">
+      <button class="region-btn region-btn--active" id="region-india-btn" data-region="india" type="button">
+        India
+      </button>
+      <button class="region-btn" id="region-europe-btn" data-region="europe" type="button">
+        Europe
+      </button>
+    </div>
+
+    <!-- ============================================================
+         MODE SWITCH (Live / Historical)
+         ============================================================ -->
+    <div class="mode-switch" id="mode-switch" role="group" aria-label="Data mode">
+      <button class="mode-btn mode-btn--active" id="mode-live-btn" data-mode="live" type="button">
+        <span class="mode-live-dot" aria-hidden="true"></span>
+        <span data-i18n="live">Live</span>
+      </button>
+      <button class="mode-btn" id="mode-hist-btn" data-mode="historical" type="button">
+        <span data-i18n="historical">Historical</span>
+      </button>
+      <span class="mode-caption" id="mode-caption">Current conditions from Open-Meteo</span>
+    </div>
+
+    <!-- ============================================================
+         CITY SELECTOR
+         ============================================================ -->
+    <section aria-labelledby="city-heading">
+      <h2 class="section-title" id="city-heading" data-i18n="choose_city">Choose a city</h2>
+      <div class="city-grid" id="city-grid" role="group" aria-label="City selection">
+        <!-- Populated by app.js renderCities() -->
+      </div>
+    </section>
+
+    <!-- ============================================================
+         DATE + PREDICT  (historical mode only)
+         ============================================================ -->
+    <section id="historical-controls" aria-label="Date and prediction controls" style="display:none;">
+      <div class="input-row">
+        <div class="input-group">
+          <label for="date-input">Date (day T &mdash; model predicts tomorrow)</label>
+          <input type="date" id="date-input" disabled
+                 aria-label="Select date for prediction">
+        </div>
+        <button class="btn-predict" id="predict-btn" disabled
+                aria-label="Run heatwave prediction">
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="btn-text">Predict heatwave risk</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         LIVE FORECAST PANEL
+         ============================================================ -->
+    <section id="live-panel" aria-label="Live forecast" style="display:none;">
+      <div id="live-loading" style="display:none;" class="live-loading" aria-live="polite">
+        <span class="spinner-inline" aria-hidden="true"></span> Fetching current conditions&hellip;
+      </div>
+      <div id="live-error" class="error-banner" role="alert" style="display:none;"></div>
+      <div id="live-content" style="display:none;">
+        <!-- Live forecast strip -->
+        <div id="live-strip" class="live-strip" aria-label="Day-by-day forecast"></div>
+        <aside id="today-advice" class="live-disclaimer" aria-live="polite"></aside>
+        <aside id="live-drift" class="live-disclaimer" aria-live="polite"></aside>
+        <p class="live-attribution">
+          Weather data by <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a>
+          &middot; <span id="live-last-updated"></span>
+          &middot; <button class="btn-live-refresh" id="live-refresh-btn" type="button" aria-label="Refresh live data">Refresh</button>
+        </p>
+        <aside id="official-alert" class="live-disclaimer" aria-live="polite"></aside>
+        <p class="live-disclaimer" id="live-model-disclaimer">
+          Forecast-based predictions are estimates and may differ from the model&rsquo;s historical accuracy.
+          Not an official warning &mdash; follow IMD advisories.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         ERROR BANNER
+         ============================================================ -->
+    <div class="error-banner" id="error-banner" role="alert" aria-live="polite">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <span id="error-text"></span>
+    </div>
+
+    <!-- ============================================================
+         RESULTS
+         ============================================================ -->
+    <section class="results" id="results" aria-live="polite" aria-label="Prediction results">
+
+      <!-- HIDDEN GAUGE SVG — keeps animateGauge() JS from erroring.
+           Actual display is the probability bar below. -->
+      <div class="gauge-card-hidden" aria-hidden="true">
+        <svg class="gauge-svg" viewBox="0 0 200 200">
+          <circle class="gauge-track" cx="100" cy="100" r="80"
+                  stroke-dasharray="377" stroke-dashoffset="94"
+                  transform="rotate(135 100 100)" />
+          <circle class="gauge-fill" id="gauge-fill" cx="100" cy="100" r="80"
+                  stroke-dasharray="377" stroke-dashoffset="283"
+                  transform="rotate(135 100 100)"
+                  stroke="#C8421B" />
+          <text class="gauge-value" id="gauge-value" x="100" y="96">0%</text>
+          <text class="gauge-label" x="100" y="120">Probability</text>
+        </svg>
+        <div id="prediction-label" style="display:none;">—</div>
+        <div id="actual-label"     style="display:none;"></div>
+      </div>
+
+      <!-- PRIMARY PROBABILITY DISPLAY -->
+      <div class="result-lead">
+        <div class="prob-display">
+          <!-- Large mono probability number -->
+          <div>
+            <div class="prob-number" id="prob-number-display" aria-label="Heatwave probability">0%</div>
+            <div class="prob-sentence" id="prob-sentence">—</div>
+          </div>
+
+          <!-- Horizontal bar -->
+          <div class="prob-bar-container">
+            <div class="prob-bar-label">
+              <span>0%</span><span>Threshold 70%</span><span>100%</span>
+            </div>
+            <div class="prob-bar-track"
+                 role="meter" aria-valuemin="0" aria-valuemax="100"
+                 aria-label="Heatwave probability" id="prob-meter">
+              <div class="prob-bar-fill" id="prob-bar-fill" style="width:0%"></div>
+              <div class="prob-bar-tick" aria-hidden="true"></div>
+              <div class="prob-bar-tick-label" aria-hidden="true">0.70</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RISK + DETAILS GRID -->
+      <div class="results-primary">
+
+        <!-- Left: hidden gauge card placeholder — keeps JS selectors valid -->
+        <div class="info-column" style="grid-column: 1;">
+
+          <!-- Risk Level -->
+          <div class="info-card">
+            <div class="info-card__header">
+              <span class="info-card__title">Risk level</span>
+            </div>
+            <div id="risk-badge-container">
+              <span class="risk-badge risk-badge--low" id="risk-badge">
+                <span class="risk-badge__dot"></span>
+                <span id="risk-level-text">LOW</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Analysis Details -->
+          <div class="info-card">
+            <div class="info-card__header">
+              <span class="info-card__title">Details</span>
+            </div>
+            <div id="score-details">
+              <div class="score-row">
+                <span class="score-row__label">City</span>
+                <span class="score-row__value" id="detail-city">—</span>
+              </div>
+              <div class="score-row">
+                <span class="score-row__label">Day T</span>
+                <span class="score-row__value" id="detail-date">—</span>
+              </div>
+              <div class="score-row">
+                <span class="score-row__label">Prediction</span>
+                <span class="score-row__value" id="detail-prediction">—</span>
+              </div>
+              <div class="score-row">
+                <span class="score-row__label">Rules triggered</span>
+                <span class="score-row__value" id="detail-rules">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Warnings -->
+          <div class="info-card" id="warnings-card" style="display:none;">
+            <div class="info-card__header">
+              <span class="info-card__title">Alerts</span>
+            </div>
+            <div id="warnings-list"></div>
+          </div>
+
+        </div>
+
+        <!-- Right: recommendations (replaces empty space) -->
+        <div style="grid-column: 2;">
+          <section class="recs-section" id="recs-section" style="display:none;"
+                   aria-label="Adaptation recommendations">
+            <h2 class="section-title">Adaptation recommendations</h2>
+            <p class="section-subhead">Guidance for the predicted risk level. Not official health advice &mdash; follow local authority instructions.</p>
+            <div class="recs-grid" id="recs-grid"></div>
+          </section>
+        </div>
+
+      </div>
+
+      <!-- EXPERT RULES -->
+      <section class="rules-section" aria-label="Expert rule assessment">
+        <h2 class="section-title">Expert rule assessment</h2>
+        <p class="section-subhead">Seven deterministic rules derived from IMD-inspired heatwave criteria. These supplement the model probability.</p>
+        <div class="rules-grid" id="rules-grid"></div>
+      </section>
+
+      <!-- SHAP EXPLAINABILITY -->
+      <section class="shap-section" id="shap-section" style="display:none;"
+               aria-label="Model explanation">
+        <h2 class="section-title">Why this prediction?</h2>
+        <p class="section-subhead">SHAP feature contributions for this specific prediction. Longer bars indicate stronger influence on the model output.</p>
+        <button class="btn-explain" id="explain-btn" aria-expanded="false">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span class="spinner" aria-hidden="true"></span>
+          <span class="btn-text">Show feature explanation</span>
+        </button>
+        <div class="shap-chart-container" id="shap-container" style="display:none;">
+          <div class="chart-card" style="margin-top: 16px;">
+            <div class="chart-card__title">Top 15 feature contributions (SHAP values)</div>
+            <canvas id="shap-chart" style="height: 420px !important;"
+                    aria-label="SHAP feature contribution chart"></canvas>
+          </div>
+          <p class="shap-note">
+            Bars to the right push the model toward predicting a heatwave; bars to the left push toward normal.
+            Global RF importance is used as a fallback when SHAP is unavailable.
+          </p>
+        </div>
+      </section>
+
+    </section><!-- /results -->
+
+    <section class="alert-signup" aria-labelledby="alert-signup-heading">
+      <h2 class="section-title" id="alert-signup-heading" data-i18n="alerts">Heat-risk alerts</h2>
+      <p class="section-subhead">Get a confirmation email before alerts begin. We store only your email and alert preferences to send these alerts; we never share them. You can unsubscribe in one click. India&rsquo;s DPDP Act applies.</p>
+      <form id="subscribe-form" class="subscribe-form" novalidate>
+        <label>Email <input id="subscribe-email" name="email" type="email" autocomplete="email" required></label>
+        <label>City <select id="subscribe-city" name="city" required></select></label>
+        <label>Minimum risk <select id="subscribe-level" name="minimum_risk_level"><option>HIGH</option><option>MODERATE</option><option>EXTREME</option></select></label>
+        <label>Language <select id="subscribe-language" name="language"><option value="en">English</option><option value="hi">Hindi (machine draft)</option><option value="mr">Marathi (machine draft)</option></select></label>
+        <button class="btn-predict" type="submit">Send confirmation</button>
+      </form>
+      <p id="subscribe-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <hr class="divider">
+
+    <!-- ============================================================
+         MAP VIEW
+         ============================================================ -->
+    <section class="map-section" aria-labelledby="map-heading">
+      <h2 class="section-title" id="map-heading">City map &mdash; heatwave history overview</h2>
+      <p class="section-subhead">Markers sized by heatwave frequency in the 2023&ndash;2025 test period. Click a marker for city details.</p>
+      <div class="map-container">
+        <div id="map" aria-label="Map of five Indian cities with heatwave risk markers"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         TREND CHART
+         ============================================================ -->
+    <section class="chart-section" aria-labelledby="trend-heading">
+      <h2 class="section-title" id="trend-heading" data-i18n="trends">Temperature and probability trends</h2>
+      <p class="section-subhead">Full test-period time series (2023&ndash;2025) for any city.</p>
+      <div class="chart-controls">
+        <label for="chart-city-select" class="visually-hidden">Select city for trend chart</label>
+        <select id="chart-city-select" class="chart-select" aria-label="Select city for trend charts">
+          <option value="">Select a city to view trends</option>
+        </select>
+      </div>
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-card__title">Daily max temperature (°C)</div>
+          <canvas id="temp-chart" aria-label="Daily max and min temperature chart"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-card__title">Model heatwave probability (%)</div>
+          <canvas id="prob-chart" aria-label="Model heatwave probability over time"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         MODEL INFO (COLLAPSIBLE — kept for JS compatibility)
+         ============================================================ -->
+    <section class="model-info-section">
+      <div class="model-info-strip">
+        Model details and test metrics &mdash;
+        <a href="/performance">see the full performance report</a>
+      </div>
+
+      <!-- Collapsible kept hidden; JS targets #model-info-content, #model-info-grid, #metrics-bar -->
+      <div style="display:none;" aria-hidden="true">
+        <button class="model-info-toggle" id="model-info-toggle" tabindex="-1">
+          <span>Model Information</span>
+          <span class="model-info-toggle__arrow" id="model-info-arrow">&#9660;</span>
+        </button>
+        <div class="model-info-content" id="model-info-content">
+          <div class="model-info-grid" id="model-info-grid"></div>
+          <div class="metrics-bar" id="metrics-bar"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /container -->
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/dist/leaflet-maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/web/app.js"></script>
+  <script src="/web/alerts.js"></script>
+  <script src="/web/product.js"></script>
+</body>
+</html>

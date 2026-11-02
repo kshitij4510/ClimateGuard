@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ClimateGuard — Model performance report: confusion matrix, ROC curve, precision–recall curve, feature importance and city comparison.">
+  <title>ClimateGuard — Model performance</title>
+  <link rel="stylesheet" href="/web/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C8421B' stroke-width='2'><path d='M12 2a7 7 0 0 1 7 7c0 3.5-2.5 6.5-5.5 8.5a3 3 0 0 1-3 0C7.5 15.5 5 12.5 5 9a7 7 0 0 1 7-7z'/><circle cx='12' cy='9' r='2.5'/></svg>">
+  <script src="/web/layout.js"></script>
+</head>
+<body>
+
+  <main id="main-content">
+  <div class="container page-body">
+
+    <header class="page-header">
+      <h1 class="page-header__title">Model performance</h1>
+      <p class="page-header__subtitle" id="perf-subtitle">Evaluation on the held-out temporal test set (2023&ndash;2025) across five Indian cities.</p>
+    </header>
+
+    <!-- Region selector -->
+    <div class="region-switch" id="perf-region-switch" role="group" aria-label="Region" style="margin-bottom: var(--sp-6);">
+      <button class="region-btn region-btn--active" id="perf-india-btn" data-region="india" type="button">India</button>
+      <button class="region-btn" id="perf-europe-btn" data-region="europe" type="button">Europe</button>
+    </div>
+    <div id="europe-perf-note" style="display:none;" class="europe-definition-note" aria-live="polite">
+      Europe-v1 uses a relative, non-official research heatwave definition (≥3 consecutive warm-season days
+      above the city-specific 90th percentile and 30°C floor; baseline 1991–2020).
+      Metrics are <strong>not comparable</strong> to the India model or to official national weather-service criteria.
+    </div>
+
+    <!-- Metrics bar -->
+    <section aria-label="Global performance metrics">
+      <div class="perf-metrics-bar" id="perf-metrics-bar">
+        <!-- Populated by JS -->
+      </div>
+      <p style="font-size: 0.8rem; color: var(--ink-muted); margin-bottom: var(--sp-6); max-width: 72ch;">
+        <strong>Recall</strong> and <strong>precision</strong> are the most important metrics for an early-warning system.
+        High recall means fewer missed heatwave days (false negatives); high precision means fewer false alarms.
+        This model is tuned for recall&mdash;it catches most heatwave days at the cost of some false alarms.
+      </p>
+    </section>
+
+    <!-- Charts row: Confusion Matrix + ROC + PR -->
+    <section class="perf-charts-row" aria-label="Performance charts">
+      <div class="chart-card">
+        <div class="chart-card__title">Confusion matrix</div>
+        <div id="confusion-matrix" class="confusion-grid" aria-label="Confusion matrix grid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card__title">ROC curve (AUC shown in legend)</div>
+        <canvas id="roc-chart" aria-label="Receiver operating characteristic curve"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card__title">Precision–recall curve (AUC shown in legend)</div>
+        <canvas id="pr-chart" aria-label="Precision-recall curve"></canvas>
+      </div>
+    </section>
+
+    <section aria-labelledby="credibility-heading" style="margin-bottom: var(--sp-10);">
+      <h2 class="section-title" id="credibility-heading">Model credibility checks</h2>
+      <p class="section-subhead">Read-only evaluation of the locked v1.0.0 model against simple baselines and calibration bins.</p>
+      <div id="evaluation-unavailable" class="live-disclaimer" hidden></div>
+      <div id="baseline-comparison" class="city-comparison-wrap"></div>
+      <div class="chart-card" style="margin-top: var(--sp-5);">
+        <div class="chart-card__title">Probability calibration</div>
+        <canvas id="calibration-chart" aria-label="Predicted probability compared with observed frequency"></canvas>
+      </div>
+      <p class="live-disclaimer" style="margin-top: var(--sp-4);">
+        Only 38 held-out next-day heatwave events exist. Ahmedabad and Mumbai have zero held-out positives, and the qualifying-day proxy is closely related to the project label definition. These results are research evidence, not an operational validation.
+      </p>
+    </section>
+
+    <section aria-labelledby="live-track-heading" style="margin-bottom: var(--sp-10);">
+      <h2 class="section-title" id="live-track-heading">Live track record</h2>
+      <p class="section-subhead">Live forecasts are stored locally and reconciled later with Open-Meteo observed maximum-temperature proxies.</p>
+      <div id="live-track-record" class="live-disclaimer" aria-live="polite">Loading live track record&hellip;</div>
+    </section>
+
+    <!-- Feature importance -->
+    <section aria-labelledby="fi-heading" style="margin-bottom: var(--sp-10);">
+      <h2 class="section-title" id="fi-heading">Top feature importance</h2>
+      <p class="section-subhead">
+        Global Random Forest feature importance (mean decrease in impurity over all trees).
+        This reflects the model's general reliance on each feature, not a per-prediction explanation.
+        Use the SHAP section on the dashboard for per-prediction detail.
+      </p>
+      <div class="chart-card">
+        <canvas id="fi-chart" style="height: 500px !important;"
+                aria-label="Feature importance bar chart"></canvas>
+      </div>
+    </section>
+
+    <!-- City comparison -->
+    <section aria-labelledby="comp-heading">
+      <h2 class="section-title" id="comp-heading">City comparison</h2>
+      <p class="section-subhead">
+        Test-set metrics per city (2023&ndash;2025). Cities with no heatwave days in the test period
+        have undefined classification metrics.
+      </p>
+      <div class="city-comparison-wrap">
+        <div id="city-comparison">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+      <p style="font-size: var(--text-xs); color: var(--ink-muted); margin-top: var(--sp-3); max-width: 72ch;">
+        * Ahmedabad: all 32 heatwave days fall in the training window; no positive test cases, so F1/precision/recall are undefined.
+        Nagpur: only 4 heatwave test days, so metrics are unreliable.
+        Mumbai: zero heatwave events across all periods (maritime climate).
+      </p>
+    </section>
+
+    <!-- DL comparison (India only, populated by JS when /api/dl/comparison is available) -->
+    <section id="dl-comparison-section" aria-labelledby="dl-heading" style="margin-bottom: var(--sp-10);" hidden>
+      <h2 class="section-title" id="dl-heading">Deep learning vs Random Forest (experimental)</h2>
+      <p class="section-subhead">
+        GRU and LSTM sequence models trained on the same India training window (1990&ndash;2019) and
+        evaluated on the same held-out test set. This is a research comparison only&mdash;ClimateGuard
+        uses the Random Forest model in production.
+      </p>
+      <div class="live-disclaimer" id="dl-research-note" style="margin-bottom: var(--sp-5);">
+        Bootstrap confidence intervals for F1 differences (DL minus RF) all include zero.
+        For PR-AUC differences, the LSTM ensemble vs RF-fair CI excludes zero ([0.002, 0.274]),
+        suggesting a possible advantage, though the test set contains only 38 positive events.
+        All results should be interpreted cautiously given the small positive count.
+        Deep-learning models trained on 21 raw meteorological features; the production RF uses
+        110 engineered features including the qualifying-day flag.
+      </div>
+
+      <!-- Summary table -->
+      <div class="city-comparison-wrap" style="margin-bottom: var(--sp-6);">
+        <div id="dl-summary-table"><!-- Populated by JS --></div>
+      </div>
+
+      <!-- Per-city F1 figure -->
+      <div class="chart-card" style="margin-bottom: var(--sp-6);">
+        <div class="chart-card__title">Per-city F1 &mdash; DL vs RF baselines</div>
+        <img id="dl-per-city-fig"
+             src=""
+             alt="Per-city F1 scores for GRU, LSTM and RF baselines across Delhi, Lucknow and Nagpur"
+             style="width:100%; height:auto; display:none;"
+             loading="lazy">
+        <p id="dl-per-city-unavail" class="live-disclaimer" hidden>Figure not yet generated. Run: python -m dl.compare</p>
+      </div>
+
+      <!-- Interactive PR curves. The retained PNG is a fallback for a missing JSON payload. -->
+      <div class="chart-card" style="margin-bottom: var(--sp-6);">
+        <div class="chart-card__title">Precision&ndash;recall curves &mdash; DL vs RF</div>
+        <canvas id="dl-pr-chart"
+                aria-label="Interactive precision-recall curves for the production Random Forest, fair Random Forest baseline, GRU and LSTM ensembles"></canvas>
+        <p id="dl-pr-summary" class="live-disclaimer" style="margin-top: var(--sp-4);">
+          The table above provides the numerical PR-AUC for every model; this chart shows how precision changes as recall increases.
+        </p>
+        <img id="dl-pr-fig"
+             src=""
+             alt="Precision-recall curves comparing GRU ensemble, LSTM ensemble, RF production and RF fair"
+             style="width:100%; height:auto; display:none;"
+             loading="lazy">
+        <p id="dl-pr-unavail" class="live-disclaimer" hidden>Figure not yet generated. Run: python -m dl.compare</p>
+      </div>
+
+      <!-- IG feature importance figure -->
+      <div class="chart-card" style="margin-bottom: var(--sp-6);">
+        <div class="chart-card__title">DL feature attribution (Integrated Gradients &mdash; GRU seed 0)</div>
+        <img id="dl-ig-fig"
+             src=""
+             alt="Bar chart of DL feature importances computed by Integrated Gradients"
+             style="width:100%; height:auto; display:none;"
+             loading="lazy">
+        <p id="dl-ig-unavail" class="live-disclaimer" hidden>Figure not yet generated. Run: python -m dl.explain</p>
+      </div>
+
+      <!-- Unavailable notice (shown when /api/dl/comparison returns 503) -->
+      <p id="dl-unavailable" class="live-disclaimer" hidden>
+        DL comparison results are not yet available. Run <code>python -m dl.compare</code> from the project root.
+      </p>
+    </section>
+
+  </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="/web/performance.js"></script>
+</body>
+</html>
